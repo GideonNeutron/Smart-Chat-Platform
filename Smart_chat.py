@@ -16,7 +16,7 @@ def get_prompt(instruction: str, history: List[str] = None) -> str:
     return prompt
 
 
-history = []
+history = [] 
 
 
 question = "Which city is the capital of India?"
