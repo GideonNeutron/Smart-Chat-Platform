@@ -1,5 +1,6 @@
 from typing import List
 from ctransformers import AutoModelForCausalLM
+import chainlit as cl
 
 llm = AutoModelForCausalLM.from_pretrained(
     "zoltanctoth/orca_mini_3B-GGUF", model_file="orca-mini-3b.q4_0.gguf"
@@ -15,7 +16,12 @@ def get_prompt(instruction: str, history: List[str] = None) -> str:
     print(f"Prompt created: {prompt}")
     return prompt
 
+@cl.on_message
+async def on_message(message: cl.Message):
+    response = f"Hello, you just sent: {message.content}!"
+    await cl.Message(response).send()
 
+"""
 history = [] 
 
 
@@ -35,5 +41,6 @@ prompt = get_prompt(question, history)
 for word in llm(prompt, stream=True):
     print(word, end="", flush=True)
 print()
+"""
 
 print("DONE")
