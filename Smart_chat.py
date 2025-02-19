@@ -1,38 +1,55 @@
-from typing import List
-from ctransformers import AutoModelForCausalLM
 import chainlit as cl
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.chains import LLMChain
+from langchain.memory import ConversationBufferMemory
+from langchain_community.llms import CTransformers
+from langchain_core.prompts import PromptTemplate
 
 
-def get_prompt(instruction: str, history: List[str] = None) -> str:
-    system = "You are an AI assistant that gives helpful answers. You answer the question in a short and concise way."
-    prompt = f"### System:\n{system}\n\n### User:\n"
-    if len(history) > 0:
-        prompt += f"This is the conversation history: {''.join(history)}. Now answer the question: "
-    prompt += f"{instruction}\n\n### Response:\n"
-    return prompt
+class StreamHandler(BaseCallbackHandler):
+    def __init__(self):
+        self.msg = cl.Message(content="")
 
-@cl.on_message
-async def on_message(message: cl.Message):
-    message_history = cl.user_session.get("message_history")
-    msg = cl.Message(content="")
-    await msg.send()
+    async def on_llm_new_token(self, token: str, **kwargs):
+        await self.msg.stream_token(token)
 
-    prompt = get_prompt(message.content, message_history)
-    response = ""
-    for word in llm(prompt, stream=True):
-        await msg.stream_token(word)
-        response += word
-    await msg.update()
-    message_history.append(response)
+    async def on_llm_end(self, response: str, **kwargs):
+        await self.msg.send()
+        self.msg = cl.Message(content="")
+
+
+# Load quantized Llama 2
+llm = CTransformers(
+    model="TheBloke/Llama-2-7B-Chat-GGUF",
+    model_file="llama-2-7b-chat.Q2_K.gguf",
+    model_type="llama2",
+    max_new_tokens=20,
+)
+
+template = """
+[INST] <<SYS>>
+You are a helpful, respectful and honest assistant.
+Always provide a concise and short answer, and use the following Context:
+{context}
+<</SYS>>
+User:
+{instruction}[/INST]"""
+
+prompt = PromptTemplate(template=template, input_variables=["context", "instruction"])
+
 
 @cl.on_chat_start
 def on_chat_start():
-    global llm
-    llm = AutoModelForCausalLM.from_pretrained(
-    "zoltanctoth/orca_mini_3B-GGUF", model_file="orca-mini-3b.q4_0.gguf"
+    memory = ConversationBufferMemory(memory_key="context")
+    llm_chain = LLMChain(prompt=prompt, llm=llm, verbose=False, memory=memory)
+    cl.user_session.set("llm_chain", llm_chain)
+
+
+@cl.on_message
+async def on_message(message: cl.Message):
+    llm_chain = cl.user_session.get("llm_chain")
+
+    await llm_chain.ainvoke(
+        message.content,
+        config={"callbacks": [cl.AsyncLangchainCallbackHandler(), StreamHandler()]},
     )
-
-
-
-
-print("DONE")
